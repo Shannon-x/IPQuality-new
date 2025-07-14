@@ -83,6 +83,7 @@ declare mode_lite=0
 declare mode_json=0
 declare mode_menu=0
 declare mode_output=0
+declare mode_manual=0
 declare ipjson
 declare ibar=0
 declare bar_pid
@@ -100,9 +101,10 @@ shelp_lines=(
 "IP QUALITY CHECK SCRIPT IP质量体检脚本"
 "Interactive Interface:  bash <(curl -sL IP.Check.Place) -EM"
 "交互界面：              bash <(curl -sL IP.Check.Place) -M"
-"Parameters 参数运行: bash <(curl -sL IP.Check.Place) [-4] [-6] [-f] [-h] [-j] [-i iface] [-l language] [-n] [-x proxy] [-y] [-E] [-M]"
+"Parameters 参数运行: bash <(curl -sL IP.Check.Place) [-4] [-6] [-a] [-f] [-h] [-j] [-i iface] [-l language] [-n] [-x proxy] [-y] [-E] [-M]"
 "            -4                             Test IPv4                                  测试IPv4"
 "            -6                             Test IPv6                                  测试IPv6"
+"            -a                             Manual IP input mode                       手动输入IP地址模式"
 "            -f                             Show full IP on reports                    报告展示完整IP地址"
 "            -h                             Help information                           帮助信息"
 "            -j                             JSON output                                JSON输出"
@@ -133,6 +135,8 @@ swarn[10]="ERROR: Output file already exist!"
 swarn[11]="ERROR: Output file is not writable!"
 swarn[40]="ERROR: IPv4 is not available!"
 swarn[60]="ERROR: IPv6 is not available!"
+swarn[12]="ERROR: Cannot specify network interface or proxy in manual mode!"
+swarn[13]="ERROR: Please enter a valid IP address!"
 sinfo[database]="Checking IP database "
 sinfo[media]="Checking stream media "
 sinfo[ai]="Checking AI provider "
@@ -257,6 +261,8 @@ swarn[10]="错误：输出文件已存在！"
 swarn[11]="错误：输出文件不可写！"
 swarn[40]="错误：IPV4不可用！"
 swarn[60]="错误：IPV6不可用！"
+swarn[12]="错误：手动模式下无法指定网卡或代理！"
+swarn[13]="错误：请输入有效的IP地址！"
 sinfo[database]="正在检测IP数据库 "
 sinfo[media]="正在检测流媒体服务商 "
 sinfo[ai]="正在检测AI服务商 "
@@ -614,6 +620,39 @@ response=$(curl $CurlARG -s6k --max-time 2 "$p")
 if [[ $? -eq 0 && ! $response =~ error && -n $response ]];then
 IPV6="$response"
 break
+fi
+done
+}
+manual_ip_input(){
+local input_ip=""
+local is_valid=0
+while [[ $is_valid -eq 0 ]];do
+echo -n "请输入要检测的IP地址 (Enter IP address to check): "
+read input_ip
+if [[ -z "$input_ip" ]];then
+echo -e "${Font_Red}错误：IP地址不能为空！$Font_Suffix"
+echo -e "${Font_Red}ERROR: IP address cannot be empty!$Font_Suffix"
+continue
+fi
+is_valid_ipv4 "$input_ip"
+if [[ $IPV4work -eq 1 ]];then
+IPV4="$input_ip"
+IPV6=""
+IPV4check=1
+IPV6check=0
+is_valid=1
+else
+is_valid_ipv6 "$input_ip"
+if [[ $IPV6work -eq 1 ]];then
+IPV6="$input_ip"
+IPV4=""
+IPV4check=0
+IPV6check=1
+is_valid=1
+else
+echo -e "${Font_Red}错误：无效的IP地址格式！请输入有效的IPv4或IPv6地址。$Font_Suffix"
+echo -e "${Font_Red}ERROR: Invalid IP address format! Please enter a valid IPv4 or IPv6 address.$Font_Suffix"
+fi
 fi
 done
 }
@@ -2112,7 +2151,7 @@ echo -ne "\r$Font_I${stail[stoday]}${stail[today]}${stail[stotal]}${stail[total]
 echo -e ""
 }
 get_opts(){
-while getopts "i:l:o:x:fhjnyEM46" opt;do
+while getopts "i:l:o:x:afhjnyEM46" opt;do
 case $opt in
 4)if
 [[ IPV4check -ne 0 ]]
@@ -2128,6 +2167,11 @@ then
 IPV4check=0
 else
 ERRORcode=6
+fi
+;;
+a)mode_manual=1
+if [[ -n "$useNIC" || -n "$usePROXY" ]];then
+ERRORcode=12
 fi
 ;;
 f)fullIP=1
@@ -2534,16 +2578,20 @@ generate_random_user_agent
 adapt_locale
 check_connectivity
 read_ref
-get_ipv4
-get_ipv6
-is_valid_ipv4 $IPV4
-is_valid_ipv6 $IPV6
 get_opts "$@"
 [[ mode_no -eq 0 ]]&&install_dependencies
 set_language
 if [[ $ERRORcode -ne 0 ]];then
 echo -ne "\r$Font_B$Font_Red${swarn[$ERRORcode]}$Font_Suffix\n"
 exit $ERRORcode
+fi
+if [[ $mode_manual -eq 1 ]];then
+manual_ip_input
+else
+get_ipv4
+get_ipv6
+is_valid_ipv4 $IPV4
+is_valid_ipv6 $IPV6
 fi
 clear
 show_ad
